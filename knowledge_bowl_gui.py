@@ -164,6 +164,8 @@ class KBApp(tk.Tk):
         self.geometry("1140x670")
         self.minsize(1000, 560)
 
+        self.iconbitmap("icon.ico")
+
         self.kb = load_kb()
 
         # History stacks: States always stored before changes.
