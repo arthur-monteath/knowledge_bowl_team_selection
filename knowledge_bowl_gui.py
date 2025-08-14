@@ -338,7 +338,7 @@ class KBApp(tk.Tk):
         ttk.Label(right, text="Build Teams", style="Header.TLabel").grid(row=0, column=0, columnspan=3, sticky="w")
 
         ttk.Label(right, text="Team size").grid(row=1, column=0, sticky="w", pady=(6, 0))
-        ttk.Label(right, text="Top N").grid(row=1, column=1, sticky="w", pady=(6, 0))
+        ttk.Label(right, text="Amount of Results").grid(row=1, column=1, sticky="w", pady=(6, 0))
 
         self.team_size_var = tk.IntVar(value=4)
         ttk.Spinbox(right, from_=2, to=10, textvariable=self.team_size_var, width=6).grid(row=2, column=0, sticky="w")
