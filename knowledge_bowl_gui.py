@@ -10,6 +10,10 @@ import sys
 import tkinter as tk
 import math
 
+def resource_path(relpath: str) -> str:
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, relpath)
+
 @dataclass
 class Player:
     name: str
@@ -135,9 +139,18 @@ class KnowledgeBowl:
         return kb
 
 # Persistence
-def data_path():
-    here = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(here, "kb_data.json")
+def data_path() -> str:
+    """Return path to kb_data.json in a platform-appropriate user data folder."""
+    if sys.platform.startswith("win"):
+        base = os.getenv("APPDATA")  # typically C:\Users\<User>\AppData\Roaming
+    elif sys.platform == "darwin":
+        base = os.path.expanduser("~/Library/Application Support")
+    else:  # Linux / others
+        base = os.path.expanduser("~/.local/share")
+
+    app_folder = os.path.join(base, "KnowledgeBowl")
+    os.makedirs(app_folder, exist_ok=True)  # create if missing
+    return os.path.join(app_folder, "kb_data.json")
 
 def load_kb():
     p = data_path()
@@ -164,7 +177,11 @@ class KBApp(tk.Tk):
         self.geometry("1140x670")
         self.minsize(1000, 560)
 
-        self.iconbitmap("icon.ico")
+        if sys.platform.startswith("win"):
+            try:
+                self.iconbitmap(resource_path("icon.ico"))
+            except Exception:
+                pass
 
         self.kb = load_kb()
 
