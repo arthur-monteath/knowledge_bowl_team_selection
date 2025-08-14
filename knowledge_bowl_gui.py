@@ -5,14 +5,11 @@ import sys
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 
-# Ensure knowledge_bowl is importable
-EMBEDDED_KB = r"""
 from __future__ import annotations
 from dataclasses import dataclass, field
 from collections import defaultdict
 from itertools import combinations
 from typing import Dict, List, Tuple, Iterable
-import json
 import math
 
 @dataclass
@@ -67,7 +64,7 @@ class KnowledgeBowl:
         return totals
 
     def _apply_weights(self, category_totals: Dict[str, float]) -> Dict[str, float]:
-        out = {}
+        out: Dict[str, float] = {}
         for c, v in category_totals.items():
             w = self.category_weights.get(c, 1.0)
             out[c] = v * w
@@ -95,7 +92,6 @@ class KnowledgeBowl:
             score = float(min(weighted.values()))
         elif aggregator == "geomean":
             vals = [max(epsilon, float(v)) for v in weighted.values()]
-            import math
             log_sum = sum(math.log(v) for v in vals)
             score = math.exp(log_sum / len(vals))
         else:
@@ -109,7 +105,6 @@ class KnowledgeBowl:
         top_n: int = 10,
         aggregator: str = "sum",
     ) -> List[Dict]:
-        from itertools import combinations
         names = self.list_players()
         if len(names) < team_size:
             raise ValueError(f"Need at least {team_size} players, have {len(names)}.")
@@ -117,18 +112,14 @@ class KnowledgeBowl:
         results = []
         for combo in combinations(names, team_size):
             score, breakdown = self.team_score(combo, aggregator=aggregator)
-            results.append(
-                {"team": list(combo), "score": score, "breakdown": breakdown}
-            )
+            results.append({"team": list(combo), "score": score, "breakdown": breakdown})
 
         results.sort(key=lambda r: (-r["score"], tuple(r["team"])))
         return results[:top_n]
 
     def to_json(self) -> str:
         data = {
-            "players": {
-                name: dict(p.categories) for name, p in self.players.items()
-            },
+            "players": {name: dict(p.categories) for name, p in self.players.items()},
             "category_weights": dict(self.category_weights),
         }
         return json.dumps(data, indent=2)
@@ -144,20 +135,6 @@ class KnowledgeBowl:
         for c, w in data.get("category_weights", {}).items():
             kb.set_weight(c, float(w))
         return kb
-"""
-
-def ensure_kb_module():
-    try:
-        import knowledge_bowl
-        return
-    except Exception:
-        here = os.path.dirname(os.path.abspath(__file__))
-        kb_path = os.path.join(here, "knowledge_bowl.py")
-        with open(kb_path, "w", encoding="utf-8") as f:
-            f.write(EMBEDDED_KB)
-
-ensure_kb_module()
-from knowledge_bowl import KnowledgeBowl
 
 # Persistence
 def data_path():
