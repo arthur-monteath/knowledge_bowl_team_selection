@@ -1,15 +1,13 @@
-
-import json
-import os
-import sys
-import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
-
 from __future__ import annotations
+from tkinter import ttk, messagebox, filedialog
 from dataclasses import dataclass, field
 from collections import defaultdict
 from itertools import combinations
 from typing import Dict, List, Tuple, Iterable
+import json
+import os
+import sys
+import tkinter as tk
 import math
 
 @dataclass
@@ -163,7 +161,7 @@ class KBApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Knowledge Bowl Team Builder")
-        self.geometry("1140x660")
+        self.geometry("1140x670")
         self.minsize(1000, 560)
 
         self.kb = load_kb()
@@ -179,6 +177,8 @@ class KBApp(tk.Tk):
         self._refresh_players()
         self._refresh_selected_player_view()
         self._refresh_weights()
+        self._update_edit_menu_labels()
+        self._update_fixed_toggle_label()
 
         # Hotkeys
         self.bind_all("<Control-z>", self.on_undo)
@@ -189,10 +189,7 @@ class KBApp(tk.Tk):
 
     # History helpers
     def _snapshot(self):
-        return {
-            "kb_json": self.kb.to_json(),
-            "fixed": self._fixed_names(),
-        }
+        return {"kb_json": self.kb.to_json(), "fixed": self._fixed_names()}
 
     def _apply_snapshot(self, snap):
         self._suspend_history = True
@@ -203,14 +200,15 @@ class KBApp(tk.Tk):
             self._refresh_players()
             self._refresh_selected_player_view()
             self._refresh_weights()
+            self._update_fixed_toggle_label()
             self.status_var.set("History applied.")
         finally:
             self._suspend_history = False
 
-    def _record_state(self):
+    def _record_state(self, label: str):
         if self._suspend_history:
             return
-        self._undo_stack.append(self._snapshot())
+        self._undo_stack.append({"snap": self._snapshot(), "label": label})
         if len(self._undo_stack) > self._HISTORY_LIMIT:
             self._undo_stack.pop(0)
         self._redo_stack.clear()
@@ -220,10 +218,11 @@ class KBApp(tk.Tk):
         if not self._undo_stack:
             self.status_var.set("Nothing to undo.")
             return "break"
-        self._redo_stack.append(self._snapshot())
-        snap = self._undo_stack.pop()
-        self._apply_snapshot(snap)
-        self.status_var.set("Undid last action.")
+        cur = {"snap": self._snapshot(), "label": self._undo_stack[-1]["label"]}
+        entry = self._undo_stack.pop()
+        self._redo_stack.append(cur)
+        self._apply_snapshot(entry["snap"])
+        self.status_var.set(f"Undid: {entry['label']}")
         self._update_edit_menu_labels()
         return "break"
 
@@ -231,10 +230,11 @@ class KBApp(tk.Tk):
         if not self._redo_stack:
             self.status_var.set("Nothing to redo.")
             return "break"
-        self._undo_stack.append(self._snapshot())
-        snap = self._redo_stack.pop()
-        self._apply_snapshot(snap)
-        self.status_var.set("Redid action.")
+        cur = {"snap": self._snapshot(), "label": self._redo_stack[-1]["label"]}
+        entry = self._redo_stack.pop()
+        self._undo_stack.append(cur)
+        self._apply_snapshot(entry["snap"])
+        self.status_var.set(f"Redid: {entry['label']}")
         self._update_edit_menu_labels()
         return "break"
 
@@ -266,8 +266,8 @@ class KBApp(tk.Tk):
         self.menubar.add_cascade(label="File", menu=file_menu)
 
         self.edit_menu = tk.Menu(self.menubar, tearoff=0)
-        self.edit_menu.add_command(label="Undo\tCtrl+Z", command=self.on_undo)
-        self.edit_menu.add_command(label="Redo\tCtrl+Y", command=self.on_redo)
+        self.edit_menu.add_command(label="Undo", command=self.on_undo, accelerator="Ctrl+Z")
+        self.edit_menu.add_command(label="Redo", command=self.on_redo, accelerator="Ctrl+Y")
         self.menubar.add_cascade(label="Edit", menu=self.edit_menu)
 
         self.config(menu=self.menubar)
@@ -285,7 +285,7 @@ class KBApp(tk.Tk):
 
         self.player_list = tk.Listbox(left, exportselection=False, selectmode="extended")
         self.player_list.pack(fill="both", expand=True, pady=(8, 8))
-        self.player_list.bind("<<ListboxSelect>>", lambda e: self._refresh_selected_player_view())
+        self.player_list.bind("<<ListboxSelect>>", lambda e: (self._refresh_selected_player_view(), self._update_fixed_toggle_label()))
 
         add_row = ttk.Frame(left)
         add_row.pack(fill="x")
@@ -296,8 +296,8 @@ class KBApp(tk.Tk):
         actions = ttk.Frame(left)
         actions.pack(fill="x", pady=(6,0))
         ttk.Button(actions, text="Remove Selected", command=self.on_remove_selected).pack(side="left")
-        ttk.Button(actions, text="Add ➜ Fixed", command=self.on_add_fixed).pack(side="left", padx=6)
-        ttk.Button(actions, text="Remove ➜ Fixed", command=self.on_remove_fixed).pack(side="left")
+        self.fixed_toggle_btn = ttk.Button(actions, text="Fix Selected", command=self.on_toggle_fixed)
+        self.fixed_toggle_btn.pack(side="left", padx=6)
 
         # Middle: Add Points + Player detail
         mid = ttk.Frame(self, padding=12)
@@ -403,7 +403,17 @@ class KBApp(tk.Tk):
         ttk.Label(status, textvariable=self.status_var, style="Small.TLabel").grid(row=0, column=0, sticky="w")
 
     def _update_edit_menu_labels(self):
-        pass
+        if self._undo_stack:
+            label = self._undo_stack[-1]["label"]
+            self.edit_menu.entryconfig(0, label=f"Undo: {label}", state="normal")
+        else:
+            self.edit_menu.entryconfig(0, label="Undo", state="disabled")
+
+        if self._redo_stack:
+            label = self._redo_stack[-1]["label"]
+            self.edit_menu.entryconfig(1, label=f"Redo: {label}", state="normal")
+        else:
+            self.edit_menu.entryconfig(1, label="Redo", state="disabled")
 
     # File menu
     def on_import(self):
@@ -411,7 +421,7 @@ class KBApp(tk.Tk):
                                           filetypes=[("JSON files","*.json"), ("All files","*.*")])
         if not path:
             return
-        self._record_state()
+        self._record_state(f"Import from {os.path.basename(path)}")
         try:
             with open(path, "r", encoding="utf-8") as f:
                 self.kb = KnowledgeBowl.from_json(f.read())
@@ -419,6 +429,7 @@ class KBApp(tk.Tk):
             self._refresh_players()
             self._refresh_selected_player_view()
             self._refresh_weights()
+            self._update_fixed_toggle_label()
             self.status_var.set(f"Imported from {os.path.basename(path)} and saved.")
         except Exception as e:
             messagebox.showerror("Import", str(e))
@@ -450,13 +461,60 @@ class KBApp(tk.Tk):
         except Exception:
             messagebox.showinfo("Data File", f"Data saved at:\n{p}")
 
+    # Selection/fixed helpers
+    def _selected_players(self):
+        return [self.player_list.get(i) for i in self.player_list.curselection()]
+
+    def _fixed_names(self):
+        return [self.fixed_list.get(i) for i in range(self.fixed_list.size())]
+
+    def _set_fixed_names(self, names):
+        self.fixed_list.delete(0, "end")
+        for n in names:
+            self.fixed_list.insert("end", n)
+        self._update_fixed_toggle_label()
+
+    def _selected_all_fixed(self):
+        sel = self._selected_players()
+        fixed = set(self._fixed_names())
+        return len(sel) > 0 and all(n in fixed for n in sel)
+
+    def _update_fixed_toggle_label(self):
+        sel = self._selected_players()
+        if not sel:
+            self.fixed_toggle_btn.config(text="Toggle Fixed", state="disabled")
+            return
+        self.fixed_toggle_btn.config(state="normal")
+        if self._selected_all_fixed():
+            self.fixed_toggle_btn.config(text="Remove from Fixed")
+        else:
+            self.fixed_toggle_btn.config(text="Add to Fixed")
+
+    def on_toggle_fixed(self):
+        sel = self._selected_players()
+        if not sel:
+            return
+        fixed = set(self._fixed_names())
+        if any(n not in fixed for n in sel):
+            # Add all selected to fixed
+            self._record_state(f"Add to Fixed: {', '.join(sel)}")
+            for n in sel:
+                fixed.add(n)
+        else:
+            # Remove selected from fixed
+            self._record_state(f"Remove from Fixed: {', '.join(sel)}")
+            for n in sel:
+                if n in fixed:
+                    fixed.remove(n)
+        self._set_fixed_names(sorted(fixed))
+
     # Player operations
     def on_add_player(self):
         name = self.add_name_var.get().strip()
         if not name:
             messagebox.showinfo("Input", "Enter a player name.")
             return
-        self._record_state()
+        self._record_state(f"Add Player '{name}'")
         try:
             self.kb.add_player(name)
             self._save("Player added.")
@@ -467,14 +525,14 @@ class KBApp(tk.Tk):
             messagebox.showerror("Add Player", str(e))
 
     def on_remove_selected(self):
-        sel = list(self.player_list.curselection())
-        if not sel:
+        sel_indices = list(self.player_list.curselection())
+        if not sel_indices:
             messagebox.showinfo("Remove Player", "Select at least one player to remove.")
             return
-        names = [self.player_list.get(i) for i in sel]
+        names = [self.player_list.get(i) for i in sel_indices]
         if not messagebox.askyesno("Confirm", f"Remove {len(names)} player(s)?"):
             return
-        self._record_state()
+        self._record_state(f"Remove {len(names)} Player(s)")
         for n in names:
             if n in self.kb.players:
                 del self.kb.players[n]
@@ -486,34 +544,6 @@ class KBApp(tk.Tk):
         self._save("Player(s) removed.")
         self._refresh_players()
         self._refresh_selected_player_view()
-
-    # Fixed players
-    def _fixed_names(self):
-        return [self.fixed_list.get(i) for i in range(self.fixed_list.size())]
-
-    def _set_fixed_names(self, names):
-        self.fixed_list.delete(0, "end")
-        for n in names:
-            self.fixed_list.insert("end", n)
-
-    def on_add_fixed(self):
-        sel = list(self.player_list.curselection())
-        if not sel:
-            messagebox.showinfo("Fixed Players", "Select players (left) to add to Fixed.")
-            return
-        self._record_state()
-        fixed = set(self._fixed_names())
-        for i in sel:
-            fixed.add(self.player_list.get(i))
-        self._set_fixed_names(sorted(fixed))
-
-    def on_remove_fixed(self):
-        sel = list(self.fixed_list.curselection())
-        if not sel:
-            return
-        self._record_state()
-        keep = [self.fixed_list.get(i) for i in range(self.fixed_list.size()) if i not in sel]
-        self._set_fixed_names(keep)
 
     # Points operations
     def on_add_point(self):
@@ -533,7 +563,7 @@ class KBApp(tk.Tk):
         if points <= 0:
             messagebox.showinfo("Input", "Points must be positive.")
             return
-        self._record_state()
+        self._record_state(f"Add {points} pt(s) to {player} in '{category}'")
         try:
             self.kb.add_point(player, category, points)
             self._save(f"Added {points} point(s) to {player} in '{category}'.")
@@ -630,7 +660,7 @@ class KBApp(tk.Tk):
         if w <= 0:
             messagebox.showinfo("Weights", "Weight must be > 0.")
             return
-        self._record_state()
+        self._record_state(f"Set weight {cat} -> {w:g}")
         try:
             self.kb.set_weight(cat, w)
             self._save(f"Weight set: {cat} -> {w}")
@@ -648,7 +678,7 @@ class KBApp(tk.Tk):
         if not values:
             return
         cat = values[0]
-        self._record_state()
+        self._record_state(f"Remove weight '{cat}'")
         if cat in self.kb.category_weights:
             del self.kb.category_weights[cat]
             self._save(f"Removed weight for '{cat}'.")
@@ -678,6 +708,7 @@ class KBApp(tk.Tk):
             self.player_list.see(idx)
             self.player_combo.set(name)
             self._refresh_selected_player_view()
+            self._update_fixed_toggle_label()
         except ValueError:
             pass
 
